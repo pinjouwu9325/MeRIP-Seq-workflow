@@ -1,0 +1,53 @@
+# This scirpt is the data preprocessing step for MeRIP-Seq analysis.
+# It contains:
+    # align reads to reference genome using STAR with default settings and output sorted by coordinate bams
+    # extract the uniquely mapped reads by MAPQ=255
+    # markduplicate of the bams
+
+# Author: Pin-Jou Wu
+# Date: 2021-03-09
+
+STAR_INDEX_DIR="PATH-TO-STAR-INDEX"
+ANNOTATION_GTF="PATH-To-GENE-ANNOTATION-GTF"
+
+# Paired end sample names with "_1.fastq.gz" and "_2.fastq.gz" suffix stored in list 
+SAMPLES=["SAMPLE-LIST"]
+
+rule all:
+    input:
+        expand("mapped_reads/{sample}.unimap.sorted.markdup.bam", sample=SAMPLES),
+        expand("mapped_reads/{sample}.markdup.stats.txt", sample=SAMPLES)
+
+rule STAR_alignment:
+    input:
+        fq1 = "/LVM_data/pinjouwu9325/rnaMethy/data/human/{sample}_1.fastq.gz",
+        fq2 = "/LVM_data/pinjouwu9325/rnaMethy/data/human/{sample}_2.fastq.gz",
+        star_index = STAR_INDEX_DIR
+    output:
+        bam = "mapped_reads/{sample}.Aligned.out.bam"
+    params:
+        prefix = "STAR_log/{sample}"
+    threads:
+        32
+    shell:
+        "STAR \
+                --runThreadN {threads} \
+                --genomeDir {input.star_index} \
+                --readFilesIn {input.fq1} {input.fq2} \
+                --readFilesCommand zcat \
+                --outStd BAM_Unsorted \
+                --outSAMtype BAM Unsorted \
+                --outSAMmapqUnique 255 \
+                --outFileNamePrefix {params.prefix} \
+                >{output.bam}"
+
+rule uniMapped_sort_markdup:
+    input:
+        bam = "mapped_reads/{sample}.Aligned.out.bam"
+    output:
+        bam = "mapped_reads/{sample}.unimap.sorted.markdup.bam",
+        stats = "mapped_reads/{sample}.markdup.stats.txt"
+    threads:
+        32
+    shell:
+        "samtools view -b -q 255 -@ {threads} {input.bam} |  samtools fixmate -m -O BAM - - | samtools sort -@ {threads} -O BAM | samtools markdup -s - {output.bam} 2>{output.stats}"
